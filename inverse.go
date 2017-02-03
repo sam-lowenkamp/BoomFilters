@@ -184,25 +184,10 @@ func (i *InverseBloomFilter) WriteTo(stream io.Writer) (int64, error) {
 // have been written by WriteTo()) from an i/o stream. It returns the number
 // of bytes read.
 func (i *InverseBloomFilter) ReadFrom(stream io.Reader) (int64, error) {
-	var capacity, size uint64
-
-	err := binary.Read(stream, binary.BigEndian, &capacity)
+	decoded, capacity, err := i.decodeToArray(stream)
 	if err != nil {
-		return 0, err
+		return int64(0), err
 	}
-
-	err = binary.Read(stream, binary.BigEndian, &size)
-	if err != nil {
-		return 0, err
-	}
-
-	// Read the encoded slice and decode into [][]byte
-	encoded := make([]byte, size)
-	stream.Read(encoded)
-	buf := bytes.NewBuffer(encoded)
-	dec := gob.NewDecoder(buf)
-	decoded := make([][]byte, capacity)
-	dec.Decode(&decoded)
 
 	// Create []*[]byte and point to each item in decoded
 	decodedWithPointers := make([]*[]byte, capacity)
@@ -216,8 +201,52 @@ func (i *InverseBloomFilter) ReadFrom(stream io.Reader) (int64, error) {
 
 	i.array = decodedWithPointers
 	i.capacity = uint(capacity)
-	return int64(len(encoded)) + int64(2*binary.Size(uint64(0))), nil
+	return int64(capacity) + int64(2*binary.Size(uint64(0))), nil
 }
+
+// ImportFrom reads a binary representation of InverseBloomFilter (such as might
+// have been written by WriteTo()) from an i/o stream. It returns the length of
+// the received elements.
+func (i *InverseBloomFilter) ImportElementsFrom(stream io.Reader) (int, error) {
+	decoded, _, err := i.decodeToArray(stream)
+	if err != nil {
+		return 0, err
+	}
+
+	// Create []*[]byte and point to each item in decoded
+	for p := range decoded {
+		if len(decoded[p]) > 0 {
+			i.Add(decoded[p])
+		}
+	}
+
+	return len(decoded), nil
+}
+
+func (i *InverseBloomFilter) decodeToArray(stream io.Reader) ([][]byte, uint64, error){
+	var capacity, size uint64
+
+	err := binary.Read(stream, binary.BigEndian, &capacity)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	err = binary.Read(stream, binary.BigEndian, &size)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Read the encoded slice and decode into [][]byte
+	encoded := make([]byte, size)
+	stream.Read(encoded)
+	buf := bytes.NewBuffer(encoded)
+	dec := gob.NewDecoder(buf)
+	decoded := make([][]byte, capacity)
+	dec.Decode(&decoded)
+
+	return decoded, capacity, nil
+}
+
 
 // GobEncode implements gob.GobEncoder interface.
 func (i *InverseBloomFilter) GobEncode() ([]byte, error) {

@@ -6,6 +6,7 @@ import (
 	"github.com/d4l3k/messagediff"
 	"strconv"
 	"testing"
+	"os"
 )
 
 // Ensures that Capacity returns the correct filter size.
@@ -89,7 +90,7 @@ func TestInverseBloomFilter_Encode(t *testing.T) {
 	}
 
 	if f.capacity != f2.capacity {
-		t.Errorf("Different capacities")
+		t.Error("Different capacities")
 	}
 
 	if len(f.array) != len(f2.array) {
@@ -102,8 +103,50 @@ func TestInverseBloomFilter_Encode(t *testing.T) {
 
 	for i := 0; i < 100000; i++ {
 		if f.Test([]byte(strconv.Itoa(i))) != f2.Test([]byte(strconv.Itoa(i))) {
-			t.Errorf("Expected both filters to Test the same for %i", i)
+			t.Errorf("Expected both filters to test the same for %d", i)
 		}
+	}
+}
+
+func TestInverseBloomFilter_ImportElementsFrom(t *testing.T) {
+	// Write out a bloom filter of size 3
+	f1 := NewInverseBloomFilter(3)
+	for _, b := range [][]byte{[]byte(`a`), []byte(`b`), []byte(`c`)} {
+		f1.Add(b)
+	}
+
+	d, err := os.Create("test.dat")
+	if err != nil {
+		t.Errorf("Failed to create test file: %v", err)
+	}
+
+	f1.WriteTo(d)
+	d.Close()
+
+	// Read the data into a new filter of size 10
+	f2 := NewInverseBloomFilter(5)
+	d, err = os.Open("test.dat")
+	if err != nil {
+		t.Errorf("Failed to open test file: %v", err)
+	}
+
+	f2.ImportElementsFrom(d)
+
+	if f2.TestAndAdd([]byte(`a`)) != true {
+		t.Error("f2 should have 'a' but returned false")
+	}
+
+	if f2.TestAndAdd([]byte(`b`)) != true {
+		t.Error("f2 should have 'b' but returned false")
+	}
+
+	if f2.TestAndAdd([]byte(`c`)) != true {
+		t.Error("f2 should have 'c' but returned false")
+	}
+
+	// Assert that the new filter is still of the new size
+	if len(f2.array) != 5 {
+		t.Errorf("Expected len of f2.array to be 5, instead found %v", len(f2.array))
 	}
 }
 
